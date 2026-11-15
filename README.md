@@ -8,9 +8,10 @@ A JavaScript app for [BUSY Bar](https://busy.app). Work in progress.
 
 - Turn the wheel to pick a session of 15, 25, 50 or 90 minutes and press Start. A tree grows on the screen while the countdown runs.
 - Finish the session and a small tree takes the slot of the day it began in the row of days, today on the right. Leave early with Back or the mode switch and the tree dies: a day with dead trees only shows a dry one. A day without a session stays an empty slot.
-- While no session runs, a little fox walks along the row of days and gets sad next to the dry trees.
-- The back display shows your forest for the week or the month, your streak of days and your total focus hours.
-- New tree species unlock as your focus hours add up: spruce, birch, oak, sakura, autumn maple, palm, cactus, sunflower, and a snowy fir in December.
+- While no session runs, a little fox walks along the row of days and gets sad next to the dry trees. When a tree grows, the fox jumps for joy and a short sound plays.
+- The back display shows your forest for today, the week, the month or the year (OK turns the pages), your streak of days, your total focus hours and the fox's name. During a session it says BUSY and the minutes left, large, for the people around you.
+- New tree species unlock as your focus hours add up: spruce, then birch at 4 hours, oak at 10, sakura at 25, autumn maple at 50, palm at 75, cactus at 100 and sunflower at 150, and a snowy fir in December. Each tree is a random species among the ones you have.
+- Settings: the default session length, the sound on or off, the fox's name.
 
 ## Data
 

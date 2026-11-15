@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "version": 1,
+  "fields": {
+    "length": {
+      "type": "enum",
+      "label": "Session length",
+      "description": "The wheel changes it before a session.",
+      "default": "25",
+      "options": [
+        { "value": "15", "label": "15 min" },
+        { "value": "25", "label": "25 min" },
+        { "value": "50", "label": "50 min" },
+        { "value": "90", "label": "90 min" }
+      ]
+    },
+    "sound": { "type": "boolean", "label": "Sound", "description": "When a tree has grown.", "default": true },
+    "pet_name": { "type": "string", "label": "Pet's name", "description": "Latin letters, up to 10.", "default": "FOXY", "min_length": 1, "max_length": 10 }
+  }
+}
