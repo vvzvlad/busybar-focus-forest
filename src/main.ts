@@ -31,6 +31,26 @@ const DRY_TRUNK = "#604830FF";
 const DRY_CROWN = "#A08050FF";
 const ROW_PALETTE = { ".": "none", c: CROWN, t: TRUNK, d: DRY_CROWN, b: DRY_TRUNK };
 
+/** The pet, a fox 6x5 facing right, o its fur, w its tail tip and muzzle: two steps of its walk, and sad with its head down. */
+const FOX_WALK = [
+  ["...o.o", "w..ooo", "ooooow", ".oooo.", ".o..o."],
+  ["...o.o", "w..ooo", "ooooow", ".oooo.", "..oo.."],
+];
+const FOX_SAD = ["......", "....o.", ".ooooo", "oooooo", "w.o..w"];
+const PET_PALETTE = { ".": "none", o: "#FF7000FF", w: WHITE };
+const PET_W = 6;
+/** The pet walks in front of the row, its feet on the bottom line, a pixel a step, PET_MS apart; it stays sad SAD_STEPS steps. */
+const PET_Y = 11;
+const PET_MS = 300;
+const SAD_STEPS = 5;
+const mirror = (grid: string[]) => grid.map((row) => row.split("").reverse().join(""));
+/** The pet's pictures, built once: the two steps and the sad one facing right, and the same facing left. */
+const PET_RIGHT = [...FOX_WALK, FOX_SAD].map((grid) => generateXpm2({ palette: PET_PALETTE, grid }));
+const PET_LEFT = [...FOX_WALK, FOX_SAD].map((grid) => generateXpm2({ palette: PET_PALETTE, grid: mirror(grid) }));
+
+/** The pet on the idle screen: its left x, the way it faces (1 right, -1 left), its steps so far, and the steps it stays sad. */
+type Pet = { x: number; dir: 1 | -1; steps: number; sad: number };
+
 type Day = { grown: number; dead: number };
 type DayLog = Record<string, Day>;
 
@@ -71,23 +91,60 @@ function addTree(kind: "grown" | "dead", began: Date): void {
   localStorage.removeItem(SESSION_KEY);
 }
 
-/** The row of the last SLOTS days as one XPM picture: a green tree for a day with a grown one, a dry tree for a day with dead ones only, an empty slot for a day without sessions. */
+/** The tree in a slot of the row: a green tree for a day with a grown one, a dry tree for a day with dead ones only, none for a day without sessions. */
+function slotTree(log: DayLog, slot: number): string[] | null {
+  const day = log[dateKey(daysAgo(SLOTS - 1 - slot))];
+  return !day ? null : day.grown > 0 ? TREE : day.dead > 0 ? DRY_TREE : null;
+}
+
+/** The row of the last SLOTS days as one XPM picture, an empty slot for a day without a tree. */
 function dayRow(log: DayLog): string {
   const grid = TREE.map(() => "");
   for (let slot = 0; slot < SLOTS; slot++) {
-    const day = log[dateKey(daysAgo(SLOTS - 1 - slot))];
-    const tree = !day ? null : day.grown > 0 ? TREE : day.dead > 0 ? DRY_TREE : null;
+    const tree = slotTree(log, slot);
     for (let r = 0; r < grid.length; r++) grid[r] += `.${tree ? tree[r] : "..."}`;
   }
   return generateXpm2({ palette: ROW_PALETTE, grid });
+}
+
+/** The x of the trunk of each dry tree in the row. */
+function dryTrunks(log: DayLog): number[] {
+  const trunks: number[] = [];
+  for (let slot = 0; slot < SLOTS; slot++) if (slotTree(log, slot) === DRY_TREE) trunks.push(slot * 4 + 2);
+  return trunks;
 }
 
 /** Idle: the session length on top, the row of days under it. */
 function idleFrame(minutes: number, log: DayLog): Element[] {
   return [
     { id: "length", type: "text", text: `${minutes} MIN`, font: "small", color: WHITE, x: 36, y: 0, align: "top_mid" },
-    { id: "days", type: "xpmbitmap", data: dayRow(log), x: 0, y: 10, align: "top_left" },
+    { id: "days", type: "xpmbitmap", data: dayRow(log), x: 0, y: 10, align: "top_left", z_index: 0 },
   ];
+}
+
+/**
+ * Moves the pet a pixel on, turning it round at the ends of the display. With its head a pixel short of a dry tree's
+ * trunk it stops there, sad, for SAD_STEPS steps.
+ */
+function walk(pet: Pet, dry: number[]): void {
+  if (pet.sad > 0) {
+    pet.sad -= 1;
+    return;
+  }
+  if (pet.x + pet.dir < 0 || pet.x + pet.dir > 72 - PET_W) pet.dir = pet.dir > 0 ? -1 : 1;
+  pet.x += pet.dir;
+  pet.steps += 1;
+  const head = pet.dir > 0 ? pet.x + PET_W - 1 : pet.x;
+  if (dry.indexOf(head + pet.dir) >= 0) pet.sad = SAD_STEPS;
+}
+
+/** The pet over the row, in front of the trees. */
+function petElement(pet: Pet): Element {
+  const pictures = pet.dir > 0 ? PET_RIGHT : PET_LEFT;
+  const data = pet.sad > 0 ? pictures[2] : pictures[pet.steps % 2];
+  // Its z_index keeps it over the row when the row is sent again, at midnight: on the emulator a bitmap without one
+  // was drawn over what was there before it.
+  return { id: "pet", type: "xpmbitmap", data, x: pet.x, y: PET_Y, align: "top_left", z_index: 1 };
 }
 
 /** A session: a tree of two rectangles on the left, as tall as the part of the session done, and the time left. */
@@ -115,6 +172,10 @@ function main(): void {
   let session: { start: number; end: number } | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  const pet: Pet = { x: 0, dir: 1, steps: 0, sad: 0 };
+  let petTimer: ReturnType<typeof setInterval> | undefined;
+  /** The idle screen without the pet and the trunks of its dry trees, built at each idle draw for the pet's steps. */
+  let idle: { frame: Element[]; dry: number[] } = { frame: [], dry: [] };
 
   // A session still marked as running was left before its end: it is a dead tree.
   try {
@@ -141,7 +202,23 @@ function main(): void {
       return;
     }
     // Read at each idle draw; the row is laid out from today's date, so after midnight the days move one slot left.
-    screen.draw(idleFrame(LENGTHS[length], readDays()));
+    const log = readDays();
+    idle = { frame: idleFrame(LENGTHS[length], log), dry: dryTrunks(log) };
+    screen.draw([...idle.frame, petElement(pet)]);
+  }
+
+  /** The pet walks only on the idle screen: its steps send the pet alone, the rest of the idle screen stays as drawn. */
+  function startPet(): void {
+    if (petTimer !== undefined) return;
+    petTimer = setInterval(() => {
+      walk(pet, idle.dry);
+      screen.draw([...idle.frame, petElement(pet)]);
+    }, PET_MS);
+  }
+
+  function stopPet(): void {
+    if (petTimer !== undefined) clearInterval(petTimer);
+    petTimer = undefined;
   }
 
   /** Idle: the row is redrawn just after the next local midnight, so a new day starts with an empty slot. */
@@ -169,6 +246,7 @@ function main(): void {
     }
     draw();
     idleUntilMidnight();
+    startPet();
   }
 
   /** Grows the tree one step at a time; at the end the tree takes the slot of the day the session began. */
@@ -186,8 +264,9 @@ function main(): void {
   }
 
   function begin(): void {
-    // The idle midnight timer gives way to the session's own.
+    // The idle midnight timer gives way to the session's own, and the pet leaves.
     stopTimer();
+    stopPet();
     const start = Date.now();
     session = { start, end: start + LENGTHS[length] * 60 * 1000 };
     try {
@@ -216,9 +295,10 @@ function main(): void {
         finish("dead");
         return;
       }
-      // Back in idle leaves the app: with the timer cleared and the handler detached, nothing keeps it alive.
+      // Back in idle leaves the app: with the timers cleared and the handler detached, nothing keeps it alive.
       stopped = true;
       stopTimer();
+      stopPet();
       // Not detached from inside the handler itself: the unbind would stop the app while this handler still runs.
       setTimeout(unbind, 0);
     }
@@ -226,6 +306,7 @@ function main(): void {
 
   draw();
   idleUntilMidnight();
+  startPet();
 }
 
 main();

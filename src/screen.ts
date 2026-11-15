@@ -20,17 +20,15 @@ export function createScreen(app: string, report: (err: unknown) => void) {
     // Until the request is answered the screen is unknown: a failed one leaves it so, and the next frame starts over.
     shown = null;
     forgotten = false;
-    if (before) {
-      const present = new Set(elements.map((e) => e.id));
-      const gone = [...before.keys()].filter((id) => !present.has(id));
-      const changed = elements.filter((e) => before.get(e.id) !== JSON.stringify(e));
-      if (gone.length > 0) await device.DisplayClear({ application_name: app, element_ids: gone });
-      // busy-lib's element types are stricter than the firmware about optional fields; these follow the firmware.
-      if (changed.length > 0) await device.DisplayDraw({ application_name: app, priority: 50, elements: changed } as never);
-    } else {
-      await device.DisplayClear({ application_name: app });
-      if (elements.length > 0) await device.DisplayDraw({ application_name: app, priority: 50, elements } as never);
-    }
+    // Clearing by ids the display may not have would be refused whole: an unknown screen is cleared all at once.
+    if (!before) await device.DisplayClear({ application_name: app });
+    const present = new Set(elements.map((e) => e.id));
+    const gone = before ? [...before.keys()].filter((id) => !present.has(id)) : [];
+    const changed = before ? elements.filter((e) => before.get(e.id) !== JSON.stringify(e)) : elements;
+    // Drawn before the old ones are cleared: clearing all of them first would close the app's screen for a moment.
+    // busy-lib's element types are stricter than the firmware about optional fields; these follow the firmware.
+    if (changed.length > 0) await device.DisplayDraw({ application_name: app, priority: 50, elements: changed } as never);
+    if (gone.length > 0) await device.DisplayClear({ application_name: app, element_ids: gone });
     if (!forgotten) shown = new Map(elements.map((e): [string, string] => [e.id, JSON.stringify(e)]));
   }
 
